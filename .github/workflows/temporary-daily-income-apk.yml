@@ -12,28 +12,32 @@ permissions:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Checkout PR source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle 8.7
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Install Android SDK components
         shell: bash
         run: |
           set -euxo pipefail
+          sdkmanager --version
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
 
       - name: Decode Daily Income source
         shell: bash
@@ -42,6 +46,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/daily-income"
           base64 -d daily-income-build/project.tar.gz.b64 > "$RUNNER_TEMP/daily-income-source.tar.gz"
           tar -xzf "$RUNNER_TEMP/daily-income-source.tar.gz" -C "$RUNNER_TEMP/daily-income"
+          test -f "$RUNNER_TEMP/daily-income/app/build.gradle"
 
       - name: Compile installable debug APK
         shell: bash
@@ -72,7 +77,7 @@ jobs:
               aapt dump badging "$APK" || true
               echo
               aapt dump permissions "$APK" || true
-            else
+            elif command -v apkanalyzer >/dev/null 2>&1; then
               apkanalyzer manifest application-id "$APK" || true
               apkanalyzer manifest min-sdk "$APK" || true
               apkanalyzer manifest target-sdk "$APK" || true
