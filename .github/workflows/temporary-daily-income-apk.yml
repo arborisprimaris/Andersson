@@ -23,16 +23,18 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK components
+      - name: Prepare Android SDK
         shell: bash
         run: |
           set -euxo pipefail
-          sdkmanager --version
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager | sort -V | tail -1)"
+          test -x "$SDKMANAGER"
+          echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
+          "$SDKMANAGER" --version
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Set up Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
@@ -73,15 +75,11 @@ jobs:
             echo "Offline core: SQLite"
             echo "Optional network: in-app opportunity feed refresh"
             echo
-            if command -v aapt >/dev/null 2>&1; then
-              aapt dump badging "$APK" || true
+            AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+            if [ -x "$AAPT" ]; then
+              "$AAPT" dump badging "$APK" || true
               echo
-              aapt dump permissions "$APK" || true
-            elif command -v apkanalyzer >/dev/null 2>&1; then
-              apkanalyzer manifest application-id "$APK" || true
-              apkanalyzer manifest min-sdk "$APK" || true
-              apkanalyzer manifest target-sdk "$APK" || true
-              apkanalyzer manifest permissions "$APK" || true
+              "$AAPT" dump permissions "$APK" || true
             fi
           } > artifact/BUILD-VERIFY.txt
           cp "$RUNNER_TEMP/daily-income-source.tar.gz" artifact/daily-income-source.tar.gz
