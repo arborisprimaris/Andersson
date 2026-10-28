@@ -1,0 +1,30 @@
+/* Holographic Virtual Life v0.9.3: offline Tamagotchi-style care engine. */
+(function(root,make){const api=make();if(typeof module==='object'&&module.exports)module.exports=api;root.HoloPet=api;})(typeof window!=='undefined'?window:globalThis,function(){'use strict';
+const MAX_LOG=24,MAX_HISTORY=14;
+const NEEDS=Object.freeze({hunger:{name:'Fullness',icon:'🍜',action:'feed',label:'Offer food',tip:'Food helps when hunger is low.'},thirst:{name:'Hydration',icon:'💧',action:'drink',label:'Offer water',tip:'A drink would help.'},energy:{name:'Energy',icon:'⚡',action:'rest',label:'Rest together',tip:'She could use a quiet rest.'},clean:{name:'Hygiene',icon:'🫧',action:'wash',label:'Freshen up',tip:'A shower or wash could help.'},happy:{name:'Mood',icon:'🎮',action:'play',label:'Play together',tip:'She might enjoy a game.'},social:{name:'Company',icon:'💬',action:'talk',label:'Have a chat',tip:'A conversation might be nice.'}});
+const CATEGORIES=Object.freeze({feed:'food',cook:'food',breakfast:'food',eat_meal:'food',drink:'water',brew_tea:'water',rest:'rest',sit:'rest',meditation:'rest',stargaze:'rest',wash:'clean',shower:'clean',hot_shower:'clean',skin_care:'clean',room_reset:'clean',clean:'clean',bed_making:'clean',tidy_kitchen:'clean',tidy_bathroom:'clean',tidy_rooftop:'clean',play:'play',arcade_match:'play',movie_night:'play',read_comic:'play',talk:'social',gift:'social',work:'work',coding_sprint:'work',exercise:'exercise',morning_stretch:'exercise'});
+const GOALS=Object.freeze(['food','water','rest','clean','play']);
+const FINISH_BADGES=Object.freeze({first_care:{name:'First care',hint:'Complete your first care action'},well_rounded:{name:'Balanced day',hint:'Complete three different care categories in one simulated day'},cozy:{name:'Comfort zone',hint:'Complete food, water, rest, cleaning and play in one simulated day'},explorer:{name:'Home explorer',hint:'Care activities can happen across the virtual apartment'}});
+const num=(n,defaultValue=0)=>Number.isFinite(Number(n))?Math.max(0,Math.floor(Number(n))):defaultValue;
+function fresh(day=1){return {version:1,day:num(day,1),totalCare:0,today:{},log:[],history:[],badges:[],lastAction:'',lastTip:'Tap PET for a care check-in.',lastSignal:'',guidance:true};}
+function normal(value,day=1){const base=fresh(day);if(!value||typeof value!=='object')return base;const dayId=num(day,1);const oldDay=num(value.day,dayId);const safe={...base,day:oldDay,totalCare:num(value.totalCare),guidance:value.guidance!==false};
+for(const key of GOALS.concat(['social','work','exercise']))safe.today[key]=Math.min(999,num(value.today?.[key]));
+safe.log=(Array.isArray(value.log)?value.log:[]).filter(x=>x&&typeof x==='object').slice(-MAX_LOG).map(x=>({day:num(x.day),kind:String(x.kind||'').slice(0,32),category:String(x.category||'').slice(0,16),origin:['user','auto','schedule','chain'].includes(x.origin)?x.origin:'user'}));
+safe.history=(Array.isArray(value.history)?value.history:[]).filter(x=>x&&typeof x==='object').slice(-MAX_HISTORY).map(x=>({day:num(x.day),count:num(x.count),categories:num(x.categories)}));
+safe.badges=[...new Set((Array.isArray(value.badges)?value.badges:[]).filter(x=>typeof x==='string'&&x in FINISH_BADGES))];
+safe.lastAction=String(value.lastAction||'').slice(0,32);safe.lastTip=String(value.lastTip||base.lastTip).slice(0,140);safe.lastSignal=String(value.lastSignal||'').slice(0,20);if(dayId>oldDay)return rollDay(safe,dayId);if(dayId<oldDay)safe.day=dayId;return safe;}
+function rollDay(pet,newDay){const p=normal({...pet,day:pet.day},pet.day),d=num(newDay,p.day);if(d<=p.day)return p;if(Object.values(p.today).some(x=>x>0))p.history.push({day:p.day,count:Object.values(p.today).reduce((n,x)=>n+x,0),categories:Object.values(p.today).filter(x=>x>0).length});p.history=p.history.slice(-MAX_HISTORY);p.day=d;p.today={};p.lastSignal='';p.lastTip='A new day in the virtual apartment.';return p;}
+function record(pet,kind,origin,day){const base=normal(pet,day);const p=base.day<num(day,base.day)?rollDay(base,day):base;const category=CATEGORIES[kind];if(!category)return {pet:p,recorded:false,badges:[]};p.totalCare++;p.today[category]=(p.today[category]||0)+1;p.lastAction=kind;
+p.log.push({day:p.day,kind,category,origin:['user','auto','schedule','chain'].includes(origin)?origin:'user'});p.log=p.log.slice(-MAX_LOG);
+const earned=[];function grant(k){if(!p.badges.includes(k)){p.badges.push(k);earned.push(k);}}
+grant('first_care');if(Object.values(p.today).filter(x=>x>0).length>=3)grant('well_rounded');if(GOALS.every(x=>(p.today[x]||0)>0))grant('cozy');if(p.totalCare>=12)grant('explorer');return{pet:p,recorded:true,badges:earned};}
+function assess(stats,pet,minutes=720){const s=stats||{},p=normal(pet,pet?.day||1);
+const ranked=Object.keys(NEEDS).map(key=>({key,level:Math.max(0,Math.min(100,num(s[key],75))),...NEEDS[key]})).sort((a,b)=>a.level-b.level);
+const critical=ranked.filter(x=>x.level<30),needsAttention=ranked.filter(x=>x.level<48),next=ranked[0];
+const hour=Math.floor((num(minutes)%1440)/60),night=hour>=22||hour<6;const avg=Math.round(ranked.reduce((n,x)=>n+x.level,0)/ranked.length);
+const status=critical.length?'Needs a little care':needsAttention.length?'Could use attention':night?'Quiet hours':'Comfortable';
+const tip=(night&&next.level>=35)?'It is quiet time in the apartment. Rest is available whenever you like.':next.tip;
+return{status,average:avg,night,priority:next,needs:ranked,attention:needsAttention.map(x=>x.key),tip,done:GOALS.filter(x=>(p.today[x]||0)>0).length,total:GOALS.length,progress:GOALS.map(x=>({category:x,done:(p.today[x]||0)>0,count:p.today[x]||0})),careToday:Object.values(p.today).reduce((n,x)=>n+x,0)};}
+function suggested(stats,pet,minutes=720){return assess(stats,pet,minutes).priority.action;}
+return Object.freeze({NEEDS,GOALS,FINISH_BADGES,CATEGORIES,fresh,normal,rollDay,record,assess,suggested});
+});
